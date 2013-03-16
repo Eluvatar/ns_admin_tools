@@ -10,10 +10,11 @@ except:
   def uname():
     return "Non-UNIX system?"
 from socket import gethostname
-import logging
+import logging,sys
 
 logging.basicConfig(format="%(asctime)s %(message)s")
-logging.getLogger().setLevel(logging.DEBUG)
+if '-v' in sys.argv or '--verbose' in sys.argv:
+  logging.getLogger().setLevel(logging.DEBUG)
 
 uname_tuple=uname()
 uname_str=str((uname_tuple[0],uname_tuple[2],uname_tuple[4]))

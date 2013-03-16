@@ -19,9 +19,6 @@ LOCK_FILE_PATH="/tmp/ns.lock"
 # Get the exclusive lock for talking to the NS API. This is a simple way
 # of ensuring you don't break the API Rate limit: All programs relying
 # on this lock will wait for it to be free before beginning.
-# Current semantics require programs to continue holding on to the lock for 30
-# seconds after they are done with it to allow programs to manage their own 
-# rate and not require a constant flat rate.
 LOCK_FILE=open(LOCK_FILE_PATH,'w+')
 fcntl.flock(LOCK_FILE,fcntl.LOCK_EX)
 
@@ -34,7 +31,7 @@ def api_request(query,user_agent=USER_AGENT):
   query['v']='3'
   qs = map(lambda k: k+"="+(query[k] if isinstance(query[k],basestring) else "+".join(query[k])), query)
   url="http://www.nationstates.net/cgi-bin/api.cgi?"+"&".join(qs)
-  req=urllib2.Request(url=url,headers={'User-Agent':user_agent})
+  req=urllib3.Request(url=url,headers={'User-Agent':user_agent})
   logger.debug("Waiting to get %s", url)
   now=time.time()
   while( now < last_request + 0.625 ):
@@ -74,3 +71,12 @@ def __handle_ee(req):
     logger.debug(f.read())
     logger.debug("---end---")
 
+import atexit
+
+def __cleanup():
+  now = time.time()
+  time.sleep( last_request + 0.625 - now)
+  LOCK_FILE.close()
+  os.remove(LOCK_FILE_PATH)
+
+atexit.register(__cleanup)
