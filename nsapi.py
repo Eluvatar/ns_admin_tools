@@ -46,7 +46,7 @@ def api_request(query,user_agent=USER_AGENT):
       __handle_ee
       raise
   except urllib2.URLError as e:
-    if e.reason[0] == 110:
+    if not isinstance(e,urllib2.HTTPError) and e.reason[0] == 110:
       now=time.time()
       last_request=now
       logger.debug("Retrying %s", url)
