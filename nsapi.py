@@ -72,11 +72,12 @@ def __handle_ee(req):
     logger.debug("---end---")
 
 import atexit
+from os import remove as remove_file
 
 def __cleanup():
   now = time.time()
   time.sleep( last_request + 0.625 - now)
   LOCK_FILE.close()
-  os.remove(LOCK_FILE_PATH)
+  remove_file(LOCK_FILE_PATH)
 
 atexit.register(__cleanup)
