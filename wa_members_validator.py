@@ -1,5 +1,5 @@
 #!/usr/bin/python
-from nsapi import api_request
+from nsapi import api_request,CTE
 from ns import id_str
 from itertools import ifilterfalse
 import json,urllib2
@@ -26,10 +26,14 @@ nat_exists = {}
 def check_wa_status(nat):
   if nat not in nat_is_wa:
     try:
-      natxml = api_request({'nation':nat,'q':'wa'},user_agent)
-      nat_is_wa[nat] = natxml.find('UNSTATUS').text != 'Non-member'
+      natxml = None
+      try:
+        natxml = api_request({'nation':nat,'q':'wa'},user_agent)
+        nat_is_wa[nat] = natxml.find('UNSTATUS').text != 'Non-member'
+      finally:
+        del natxml
       nat_exists[nat] = True
-    except urllib2.HTTPError:
+    except CTE:
       nat_is_wa[nat] = False
       nat_exists[nat] = False
   return nat_is_wa[nat]
@@ -42,6 +46,8 @@ def exists(nat):
 wa_xml = api_request({'wa':'1','q':'members'},user_agent)
 
 wa_members = wa_xml.find('MEMBERS').text.split(',')
+  
+del wa_xml
 
 def page(nat):
   i=wa_members.index(nat)

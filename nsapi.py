@@ -1,6 +1,7 @@
 import xml.etree.ElementTree as ET
 from xml.parsers.expat import ExpatError as EE
-import urllib2,fcntl,time,logging
+from xml.etree.ElementTree import ParseError as PE
+import httplib,fcntl,time,logging,socket,threading
 
 from getpass import getuser
 try:
@@ -24,14 +25,22 @@ fcntl.flock(LOCK_FILE,fcntl.LOCK_EX)
 
 logger = logging.getLogger(__name__)
 
+conn = httplib.HTTPConnection("www.nationstates.net")
+
+class CTE(Exception):
+  def __init__(self, value):
+    self.value = value
+  def __str__(self):
+    return repr(self.value)
+
 last_request=0.0
 def api_request(query,user_agent=USER_AGENT):
-  """ requests information from version 3 of the NS API. Raises an urllib2.HTTPError if the requested object does not exist or you have been banned from the API. """ 
+  """ requests information from version 3 of the NS API. Raises an httplib.HTTPError if the requested object does not exist or you have been banned from the API. """ 
   global last_request
   query['v']='3'
   qs = map(lambda k: k+"="+(query[k] if isinstance(query[k],basestring) else "+".join(query[k])), query)
-  url="http://www.nationstates.net/cgi-bin/api.cgi?"+"&".join(qs)
-  req=urllib2.Request(url=url,headers={'User-Agent':user_agent})
+  path = "/cgi-bin/api.cgi?"+"&".join(qs)
+  url = "http://www.nationstates.net"+path
   logger.debug("Waiting to get %s", url)
   now=time.time()
   while( now < last_request + 0.625 ):
@@ -39,45 +48,63 @@ def api_request(query,user_agent=USER_AGENT):
     now=time.time()
   last_request=now
   logger.debug("Getting %s", url)
+  f = None
   try:
-    try:
-      return ET.parse(urllib2.urlopen(req))
-    except EE:
-      __handle_ee
-      raise
-  except urllib2.URLError as e:
-    if not isinstance(e,urllib2.HTTPError) and e.reason[0] == 110:
+    conn.request("GET",path,None,{'User-Agent':user_agent})
+    done = False
+    while( not done ):
+      try:
+        f = conn.getresponse()
+        done = True
+      except httplib.ResponseNotReady:
+        logger.debug("Waiting for response...")
+        time.sleep(1)
+    if f.status == 200:
+      return ET.parse(f)
+    elif f.status == httplib.NOT_FOUND:
+      f.read()
+      if 'nation' in query:
+        raise CTE(query['nation'])
+      elif 'region' in query:
+        raise CTE(query['region'])
+      else:
+        raise f
+    elif f.status == httplib.REQUEST_TIMEOUT:
       now=time.time()
       last_request=now
       logger.debug("Retrying %s", url)
-      try:
-        return ET.parse(urllib2.urlopen(req))
-      except EE:
-        __handle_ee(req)
-        raise
-    else:
-      raise
+      conn.request("GET",path,None,{'User-Agent':user_agent})
+      f = conn.getresponse()
+      return ET.parse(f)
+  except (EE,PE):
+    __handle_ee(f,path,user_agent)
+    raise
+  finally:
+    del f
 
-def __handle_ee(req):
+def __handle_ee(f,path,user_agent):
   logger.error("api_request of %s failed to parse",url)
   if logger.isEnabledFor(logging.DEBUG):
-    now=time.time()
-    while( now < last_request + 0.625 ):
-      time.sleep( last_request + 0.625 - now )
-      now=time.time()
     last_request=now
-    f=urllib2.urlopen(req)
     logger.debug("---begin---")
     logger.debug(f.read())
     logger.debug("---end---")
+    del f
+  else:
+    f.read()
 
 import atexit
 from os import remove as remove_file
 
-def __cleanup():
+def __unlock_rm():
   now = time.time()
   time.sleep( last_request + 0.625 - now)
   LOCK_FILE.close()
   remove_file(LOCK_FILE_PATH)
+
+def __cleanup():
+  t = threading.Thread(target=__unlock_rm)
+  t.daemon = True
+  t.start()
 
 atexit.register(__cleanup)
