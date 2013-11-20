@@ -36,7 +36,7 @@ class CTE(Exception):
 last_request=0.0
 def api_request(query,user_agent=USER_AGENT):
   """ requests information from version 3 of the NS API. Raises an httplib.HTTPError if the requested object does not exist or you have been banned from the API. """ 
-  global last_request
+  global last_request, conn
   query['v']='3'
   qs = map(lambda k: k+"="+(query[k] if isinstance(query[k],basestring) else "+".join(query[k])), query)
   path = "/cgi-bin/api.cgi?"+"&".join(qs)
@@ -52,13 +52,22 @@ def api_request(query,user_agent=USER_AGENT):
   try:
     conn.request("GET",path,None,{'User-Agent':user_agent})
     done = False
+    tries = 0
     while( not done ):
       try:
+        tries += 1
         f = conn.getresponse()
         done = True
       except httplib.ResponseNotReady:
         logger.debug("Waiting for response...")
         time.sleep(1)
+        if tries > 10:
+          raise
+      except httplib.BadStatusLine:
+        conn = httplib.HTTPConnection("www.nationstates.net")
+        conn.request("GET",path,None,{'User-Agent':user_agent})
+        if tries > 10:
+          raise
     if f.status == 200:
       return ET.parse(f)
     elif f.status == httplib.NOT_FOUND:
